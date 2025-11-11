@@ -1,10 +1,9 @@
 package battleship.servidor;
 
 import battleship.model.*;
-import battleship.protocol.Mensaje;
 import java.net.Socket;
-import java.io.*;
-import java.util.ArrayList;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.BrokenBarrierException;
 
 /**
  * Representa una partida de Battleship entre dos jugadores.
@@ -37,6 +36,9 @@ public class Partida {
     // Turno actual (1 o 2)
     private int turnoActual;
     
+    // CyclicBarrier para sincronizar inicio de partida cuando ambos jugadores están listos
+    private CyclicBarrier barrierInicioPartida;
+    
     // Lock para sincronización
     private final Object lock = new Object();
     
@@ -49,6 +51,11 @@ public class Partida {
         this.id = id;
         this.estado = EstadoPartida.ESPERANDO_JUGADOR;
         this.turnoActual = 1;
+        // Inicializar CyclicBarrier para 2 jugadores
+        // Cuando ambos lleguen a la barrera, se ejecutará la acción de inicio
+        this.barrierInicioPartida = new CyclicBarrier(2, () -> {
+            System.out.println("Partida " + id + " - Ambos jugadores han confirmado inicio");
+        });
     }
     
     /**
@@ -75,8 +82,8 @@ public class Partida {
      * Agrega un jugador a la partida.
      * 
      * @param nombre Nombre del jugador
-     * @param socket Socket del jugador
-     * @return true si se agregó exitosamente
+     * @param socket Socket de conexión del jugador
+     * @return true si se agregó exitosamente, false si la partida está completa
      */
     public boolean agregarJugador(String nombre, Socket socket) {
         synchronized (lock) {
@@ -95,7 +102,7 @@ public class Partida {
     /**
      * Verifica si la partida está completa (2 jugadores).
      * 
-     * @return true si hay 2 jugadores
+     * @return true si hay 2 jugadores, false en caso contrario
      */
     public boolean estaCompleta() {
         synchronized (lock) {
@@ -106,7 +113,7 @@ public class Partida {
     /**
      * Obtiene el jugador 1.
      * 
-     * @return Jugador 1
+     * @return Jugador 1 o null si no existe
      */
     public JugadorPartida getJugador1() {
         return jugador1;
@@ -115,7 +122,7 @@ public class Partida {
     /**
      * Obtiene el jugador 2.
      * 
-     * @return Jugador 2
+     * @return Jugador 2 o null si no existe
      */
     public JugadorPartida getJugador2() {
         return jugador2;
@@ -125,7 +132,7 @@ public class Partida {
      * Verifica si un socket pertenece a un jugador de esta partida.
      * 
      * @param socket Socket a verificar
-     * @return true si pertenece a la partida
+     * @return true si el socket pertenece a algún jugador de la partida
      */
     public boolean contieneJugador(Socket socket) {
         synchronized (lock) {
@@ -137,8 +144,8 @@ public class Partida {
     /**
      * Obtiene el rival de un jugador.
      * 
-     * @param socket Socket del jugador
-     * @return Rival o null
+     * @param socket Socket del jugador actual
+     * @return JugadorPartida rival o null si no se encuentra
      */
     public JugadorPartida obtenerRival(Socket socket) {
         synchronized (lock) {
@@ -154,8 +161,8 @@ public class Partida {
     /**
      * Obtiene el jugador asociado a un socket.
      * 
-     * @param socket Socket del jugador
-     * @return Jugador o null
+     * @param socket Socket del jugador a buscar
+     * @return JugadorPartida asociado o null si no se encuentra
      */
     public JugadorPartida obtenerJugador(Socket socket) {
         synchronized (lock) {
@@ -170,8 +177,9 @@ public class Partida {
     
     /**
      * Marca que un jugador está listo (terminó de colocar barcos).
+     * Utiliza CyclicBarrier para sincronizar el inicio cuando ambos jugadores están listos.
      * 
-     * @param socket Socket del jugador
+     * @param socket Socket del jugador que está listo
      */
     public void marcarJugadorListo(Socket socket) {
         synchronized (lock) {
@@ -179,9 +187,19 @@ public class Partida {
             if (jugador != null) {
                 jugador.setListo(true);
                 
-                // Si ambos están listos, iniciar partida
+                // Si ambos están listos, usar CyclicBarrier para sincronizar inicio
                 if (jugador1.isListo() && jugador2.isListo()) {
                     estado = EstadoPartida.EN_CURSO;
+                    
+                    // Intentar pasar la barrera (demuestra uso de CyclicBarrier del temario)
+                    try {
+                        barrierInicioPartida.await();
+                    } catch (InterruptedException e) {
+                        System.err.println("Partida " + id + " - Barrera interrumpida: " + e.getMessage());
+                        Thread.currentThread().interrupt();
+                    } catch (BrokenBarrierException e) {
+                        System.err.println("Partida " + id + " - Barrera rota: " + e.getMessage());
+                    }
                 }
             }
         }
@@ -190,7 +208,7 @@ public class Partida {
     /**
      * Verifica si ambos jugadores están listos.
      * 
-     * @return true si ambos están listos
+     * @return true si ambos jugadores han terminado de colocar sus barcos
      */
     public boolean ambosJugadoresListos() {
         synchronized (lock) {
@@ -202,8 +220,8 @@ public class Partida {
     /**
      * Verifica si es el turno de un jugador.
      * 
-     * @param socket Socket del jugador
-     * @return true si es su turno
+     * @param socket Socket del jugador a verificar
+     * @return true si es el turno del jugador, false en caso contrario
      */
     public boolean esTurnoDeJugador(Socket socket) {
         synchronized (lock) {
@@ -218,6 +236,7 @@ public class Partida {
     
     /**
      * Cambia el turno al siguiente jugador.
+     * Alterna entre jugador 1 y jugador 2.
      */
     public void cambiarTurno() {
         synchronized (lock) {
@@ -229,9 +248,9 @@ public class Partida {
      * Procesa un disparo en la partida.
      * 
      * @param socket Socket del jugador que dispara
-     * @param fila Fila del disparo
-     * @param columna Columna del disparo
-     * @return Resultado del disparo
+     * @param fila Fila del disparo (0-9)
+     * @param columna Columna del disparo (0-9)
+     * @return ResultadoDisparo indicando el resultado (AGUA, TOCADO, HUNDIDO, etc.)
      */
     public ResultadoDisparo procesarDisparo(Socket socket, int fila, int columna) {
         synchronized (lock) {

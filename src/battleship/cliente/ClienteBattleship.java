@@ -46,21 +46,36 @@ public class ClienteBattleship {
      * Inicia el cliente y se conecta al servidor.
      */
     public void iniciar() {
-        try {
+        try (Socket socketLocal = new Socket(HOST, PUERTO);
+             BufferedReader brLocal = new BufferedReader(new InputStreamReader(socketLocal.getInputStream()));
+             DataOutputStream dosLocal = new DataOutputStream(socketLocal.getOutputStream())) {
+            
             System.out.println("====================================");
             System.out.println("  Cliente Battleship");
             System.out.println("====================================");
             System.out.println("Conectando al servidor...\n");
             
-            socket = new Socket(HOST, PUERTO);
-            br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            dos = new DataOutputStream(socket.getOutputStream());
+            // Asignar a variables de instancia para uso en otros métodos
+            this.socket = socketLocal;
+            this.br = brLocal;
+            this.dos = dosLocal;
             
             System.out.println("Conectado al servidor\n");
             
             // Solicitar nombre del jugador
             System.out.print("Ingresa tu nombre: ");
             nombreJugador = inputReader.readLine();
+            
+            // Validar nombre del jugador
+            if (nombreJugador == null || nombreJugador.trim().isEmpty()) {
+                System.err.println("Error: El nombre no puede estar vacío");
+                return;
+            }
+            if (nombreJugador.length() > 20) {
+                System.err.println("Error: El nombre no puede exceder 20 caracteres");
+                return;
+            }
+            nombreJugador = nombreJugador.trim();
             
             // Enviar mensaje de conexión
             enviarMensaje(new Mensaje(Mensaje.CONECTAR, nombreJugador));
@@ -72,10 +87,16 @@ public class ClienteBattleship {
             // Menú principal en el hilo principal
             mostrarMenu();
             
+            // Esperar a que el hilo de recepción termine
+            hiloRecepcion.join();
+            
         } catch (UnknownHostException e) {
             System.err.println("No se pudo conectar al servidor: " + e.getMessage());
         } catch (IOException e) {
             System.err.println("Error de conexión: " + e.getMessage());
+        } catch (InterruptedException e) {
+            System.err.println("Hilo interrumpido: " + e.getMessage());
+            Thread.currentThread().interrupt();
         }
     }
     
@@ -104,7 +125,17 @@ public class ClienteBattleship {
                         System.out.flush();
                         String idStr = leerLineaMenuAbortable();
                         if (idStr != null && !enJuego) {
-                            enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, idStr.trim()));
+                            // Validar ID de partida
+                            try {
+                                int idPartida = Integer.parseInt(idStr.trim());
+                                if (idPartida <= 0) {
+                                    System.out.println(Colores.Battleship.ERROR + "✗ El ID debe ser un número positivo" + Colores.RESET);
+                                    break;
+                                }
+                                enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, String.valueOf(idPartida)));
+                            } catch (NumberFormatException e) {
+                                System.out.println(Colores.Battleship.ERROR + "✗ ID inválido, debe ser un número" + Colores.RESET);
+                            }
                         }
                         break;
                     case "3":

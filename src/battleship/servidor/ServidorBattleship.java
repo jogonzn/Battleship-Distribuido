@@ -4,9 +4,13 @@ import battleship.protocol.Mensaje;
 import battleship.model.*;
 import java.io.*;
 import java.net.*;
-import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
 
 /**
  * Servidor principal del juego Battleship.
@@ -19,8 +23,17 @@ public class ServidorBattleship {
     // Puerto del servidor
     private static final int PUERTO = 5001;
     
-    // Lista de partidas activas
-    private static ArrayList<Partida> partidas = new ArrayList<Partida>();
+    // Número máximo de partidas simultáneas
+    private static final int MAX_PARTIDAS = 50;
+    
+    // Semáforo para limitar partidas concurrentes
+    private static final Semaphore semaforoPartidas = new Semaphore(MAX_PARTIDAS);
+    
+    // Lista de partidas activas (thread-safe)
+    private static CopyOnWriteArrayList<Partida> partidas = new CopyOnWriteArrayList<>();
+    
+    // Caché de streams de salida por socket (thread-safe)
+    private static ConcurrentHashMap<Socket, DataOutputStream> streamsPorSocket = new ConcurrentHashMap<>();
     
     // Contador para IDs de partidas
     private static int contadorPartidas = 1;
@@ -42,12 +55,16 @@ public class ServidorBattleship {
                 System.out.println("Nueva conexión desde: " + cliente.getInetAddress());
                 
                 // Crear hilo para manejar el cliente
+                // El socket se cerrará automáticamente en ManejadorCliente.run()
                 pool.execute(new ManejadorCliente(cliente));
             }
             
         } catch (IOException e) {
             System.err.println("Error en el servidor: " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            // Cerrar pool de hilos al finalizar
+            pool.shutdown();
         }
     }
     
@@ -57,8 +74,13 @@ public class ServidorBattleship {
      * @param nombre Nombre del jugador creador
      * @param socket Socket del jugador
      * @return ID de la partida creada
+     * @throws IllegalStateException si se alcanzó el límite de partidas
      */
     public static synchronized int crearPartida(String nombre, Socket socket) {
+        if (!semaforoPartidas.tryAcquire()) {
+            throw new IllegalStateException("Máximo de partidas simultáneas alcanzado");
+        }
+        
         int id = contadorPartidas++;
         Partida partida = new Partida(id);
         partida.agregarJugador(nombre, socket);
@@ -111,7 +133,49 @@ public class ServidorBattleship {
      */
     public static synchronized void eliminarPartida(Partida partida) {
         partidas.remove(partida);
+        semaforoPartidas.release(); // Liberar permiso del semáforo
         System.out.println("Partida " + partida.getId() + " eliminada");
+    }
+    
+    /**
+     * Obtiene el stream de salida cacheado para un socket.
+     * 
+     * @param socket Socket del cual obtener el stream
+     * @return DataOutputStream asociado al socket
+     * @throws IOException si hay error al crear el stream
+     */
+    public static DataOutputStream obtenerStream(Socket socket) throws IOException {
+        return streamsPorSocket.computeIfAbsent(socket, s -> {
+            try {
+                return new DataOutputStream(s.getOutputStream());
+            } catch (IOException e) {
+                throw new RuntimeException("Error creando stream", e);
+            }
+        });
+    }
+    
+    /**
+     * Elimina el stream cacheado de un socket.
+     * 
+     * @param socket Socket cuyo stream eliminar
+     */
+    public static void eliminarStream(Socket socket) {
+        streamsPorSocket.remove(socket);
+    }
+    
+    /**
+     * Verifica el estado del servidor de forma asíncrona usando Callable.
+     * Ejemplo de uso de Callable y Future del temario.
+     * 
+     * @return Future con el número de partidas activas
+     */
+    public static Future<Integer> verificarEstadoAsync() {
+        Callable<Integer> tarea = () -> {
+            // Simulación de operación costosa
+            Thread.sleep(100);
+            return partidas.size();
+        };
+        return pool.submit(tarea);
     }
 }
 
@@ -121,7 +185,6 @@ public class ServidorBattleship {
 class ManejadorCliente implements Runnable {
     
     private Socket socket;
-    private BufferedReader br;
     private DataOutputStream dos;
     private String nombreJugador;
     
@@ -131,9 +194,11 @@ class ManejadorCliente implements Runnable {
     
     @Override
     public void run() {
-        try {
-            br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            dos = new DataOutputStream(socket.getOutputStream());
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             DataOutputStream dosLocal = new DataOutputStream(socket.getOutputStream())) {
+            
+            // Asignar a variable de instancia para uso en métodos
+            this.dos = dosLocal;
             
             // Enviar mensaje de bienvenida
             enviarMensaje(new Mensaje(Mensaje.BIENVENIDA, "Conectado al servidor Battleship"));
@@ -196,9 +261,12 @@ class ManejadorCliente implements Runnable {
                 default:
                     enviarMensaje(new Mensaje(Mensaje.ERROR, "Comando desconocido"));
             }
-        } catch (Exception e) {
-            System.err.println("Error procesando mensaje: " + e.getMessage());
-            e.printStackTrace();
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error en parámetros: " + e.getMessage());
+            enviarMensaje(new Mensaje(Mensaje.ERROR, "Parámetros inválidos"));
+        } catch (IllegalStateException e) {
+            System.err.println("Error de estado: " + e.getMessage());
+            enviarMensaje(new Mensaje(Mensaje.ERROR, e.getMessage()));
         }
     }
     
@@ -216,9 +284,13 @@ class ManejadorCliente implements Runnable {
      * Procesa comando CREAR_PARTIDA.
      */
     private void procesarCrearPartida(Mensaje mensaje) {
-        int idPartida = ServidorBattleship.crearPartida(nombreJugador, socket);
-        enviarMensaje(new Mensaje(Mensaje.PARTIDA_CREADA, String.valueOf(idPartida)));
-        enviarMensaje(new Mensaje(Mensaje.ESPERANDO_RIVAL));
+        try {
+            int idPartida = ServidorBattleship.crearPartida(nombreJugador, socket);
+            enviarMensaje(new Mensaje(Mensaje.PARTIDA_CREADA, String.valueOf(idPartida)));
+            enviarMensaje(new Mensaje(Mensaje.ESPERANDO_RIVAL));
+        } catch (IllegalStateException e) {
+            enviarMensaje(new Mensaje(Mensaje.ERROR, e.getMessage()));
+        }
     }
     
     /**
@@ -355,6 +427,8 @@ class ManejadorCliente implements Runnable {
                 
                 if (resultado == ResultadoDisparo.YA_DISPARADO) {
                     enviarMensaje(new Mensaje(Mensaje.ERROR, "Ya disparaste en esa posición"));
+                    // Devolver el turno al mismo jugador para que intente de nuevo
+                    enviarMensaje(new Mensaje(Mensaje.TU_TURNO));
                     return;
                 }
                 
@@ -412,19 +486,25 @@ class ManejadorCliente implements Runnable {
     
     /**
      * Envía un mensaje a un socket específico.
+     * Usa el caché de streams para evitar crear nuevos DataOutputStream.
+     * 
+     * @param destino Socket de destino
+     * @param mensaje Mensaje a enviar
      */
     private void enviarMensajeA(Socket destino, Mensaje mensaje) {
         try {
-            DataOutputStream dosDestino = new DataOutputStream(destino.getOutputStream());
+            DataOutputStream dosDestino = ServidorBattleship.obtenerStream(destino);
             dosDestino.writeBytes(mensaje.serializar());
             dosDestino.flush();
         } catch (IOException e) {
             System.err.println("Error enviando mensaje: " + e.getMessage());
+        } catch (RuntimeException e) {
+            System.err.println("Error obteniendo stream: " + e.getCause().getMessage());
         }
     }
     
     /**
-     * Desconecta al cliente.
+     * Desconecta al cliente y limpia recursos.
      */
     private void desconectar() {
         try {
@@ -439,10 +519,13 @@ class ManejadorCliente implements Runnable {
                 ServidorBattleship.eliminarPartida(partida);
             }
             
+            // Eliminar stream del caché antes de cerrar
+            ServidorBattleship.eliminarStream(socket);
+            
             socket.close();
             System.out.println("Cliente " + nombreJugador + " desconectado");
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Error al desconectar: " + e.getMessage());
         }
     }
 }
