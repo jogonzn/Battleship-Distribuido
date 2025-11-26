@@ -30,6 +30,10 @@ public class ClienteBattleship {
     // Variable para controlar el menú
     private volatile boolean enJuego = false;
     private CountDownLatch iniciarColocacion = new CountDownLatch(1);
+    // Sincronización para colocación de barcos
+    private final Object cerrojoColocacion = new Object();
+    private volatile boolean confirmacionRecibida = false;
+    private volatile boolean errorColocacion = false;
     
     public ClienteBattleship() {
         this.inputReader = new BufferedReader(new InputStreamReader(System.in));
@@ -189,7 +193,6 @@ public class ClienteBattleship {
             Barco.TipoBarco.SUBMARINO,
             Barco.TipoBarco.DESTRUCTOR
         };
-        
         for (Barco.TipoBarco tipo : tipos) {
             boolean colocado = false;
             while (!colocado) {
@@ -217,7 +220,8 @@ public class ClienteBattleship {
                     Tablero.ColocacionResultado resultado = miTablero.colocarBarcoDetallado(barco, inicio, orientacion);
                     switch (resultado) {
                         case EXITO:
-                            // Enviar y esperar confirmación del servidor
+                            // Enviar datos al servidor y esperar confirmación
+                            enviarMensaje(new Mensaje(Mensaje.COLOCAR_BARCO, tipo.name(), String.valueOf(fila), String.valueOf(columna), orientacionStr));
                             synchronized (cerrojoColocacion) {
                                 confirmacionRecibida = false;
                                 errorColocacion = false;
@@ -380,65 +384,65 @@ public class ClienteBattleship {
                 case Mensaje.BIENVENIDA:
                     // Ya mostrado en iniciar()
                     break;
-                    
                 case Mensaje.PARTIDA_CREADA:
                     System.out.println("\n✓ Partida creada con ID: " + mensaje.getParametro(0));
                     break;
-                    
                 case Mensaje.ESPERANDO_RIVAL:
                     System.out.println("Esperando a que otro jugador se una...");
                     break;
-                    
                 case Mensaje.RIVAL_CONECTADO:
                     System.out.println("\n✓ Rival conectado: " + mensaje.getParametro(0));
                     break;
-                    
                 case Mensaje.COLOCAR_BARCOS:
                     enJuego = true; // Activar modo juego
                     // Señalar al hilo principal que comience la colocación
                     iniciarColocacion.countDown();
                     break;
-                    
                 case Mensaje.BARCO_COLOCADO:
                     System.out.println("\n" + Colores.Battleship.EXITO + "✔ Servidor confirmó barco: " + mensaje.getParametro(0) + Colores.RESET);
+                    // Desbloquear al hilo main para continuar con el siguiente barco
+                    synchronized (cerrojoColocacion) {
+                        confirmacionRecibida = true;
+                        errorColocacion = false;
+                        cerrojoColocacion.notifyAll();
+                    }
                     break;
-                    
                 case Mensaje.TU_TURNO:
                     realizarDisparo();
                     break;
-                    
                 case Mensaje.ESPERA_TURNO:
                     System.out.println("\nEsperando turno del rival...");
                     break;
-                    
                 case Mensaje.RESULTADO_DISPARO:
                     procesarResultadoDisparo(mensaje);
                     break;
-                    
                 case Mensaje.DISPARO_RIVAL:
                     procesarDisparoRival(mensaje);
                     break;
-                    
                 case Mensaje.BARCO_HUNDIDO:
                     System.out.println("\n¡Barco " + mensaje.getParametro(0) + " HUNDIDO!");
                     break;
-                    
                 case Mensaje.VICTORIA:
                     System.out.println("\n" + "=".repeat(40));
                     System.out.println("¡VICTORIA! Has ganado la partida");
                     System.out.println("=".repeat(40));
                     break;
-                    
                 case Mensaje.DERROTA:
                     System.out.println("\n" + "=".repeat(40));
-                    System.out.println("DERROTA. " + mensaje.getParametro(0) + " ha ganado");
+                    System.out.println("¡DERROTA! " + mensaje.getParametro(0) + " ha ganado");
                     System.out.println("=".repeat(40));
                     break;
-                    
                 case Mensaje.ERROR:
                     System.out.println("\n✗ Error: " + mensaje.getParametro(0));
+                    // Si estamos en fase de colocación, desbloquear para reintentar
+                    if (enJuego) {
+                        synchronized (cerrojoColocacion) {
+                            confirmacionRecibida = true;
+                            errorColocacion = true;
+                            cerrojoColocacion.notifyAll();
+                        }
+                    }
                     break;
-                    
                 default:
                     System.out.println("Mensaje desconocido: " + mensaje);
             }

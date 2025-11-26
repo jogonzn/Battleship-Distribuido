@@ -36,9 +36,6 @@ public class Partida {
     // Turno actual (1 o 2)
     private int turnoActual;
     
-    // CyclicBarrier para sincronizar inicio de partida cuando ambos jugadores están listos
-    private CyclicBarrier barrierInicioPartida;
-    
     // Lock para sincronización
     private final Object lock = new Object();
     
@@ -51,11 +48,6 @@ public class Partida {
         this.id = id;
         this.estado = EstadoPartida.ESPERANDO_JUGADOR;
         this.turnoActual = 1;
-        // Inicializar CyclicBarrier para 2 jugadores
-        // Cuando ambos lleguen a la barrera, se ejecutará la acción de inicio
-        this.barrierInicioPartida = new CyclicBarrier(2, () -> {
-            System.out.println("Partida " + id + " - Ambos jugadores han confirmado inicio");
-        });
     }
     
     /**
@@ -178,30 +170,31 @@ public class Partida {
     /**
      * Marca que un jugador está listo (terminó de colocar barcos).
      * Utiliza CyclicBarrier para sincronizar el inicio cuando ambos jugadores están listos.
-     * 
      * @param socket Socket del jugador que está listo
      */
     public void marcarJugadorListo(Socket socket) {
+        boolean iniciarJuego = false;
+        
         synchronized (lock) {
             JugadorPartida jugador = obtenerJugador(socket);
             if (jugador != null) {
                 jugador.setListo(true);
                 
-                // Si ambos están listos, usar CyclicBarrier para sincronizar inicio
+                // Si soy el último en estar listo, doy la señal
                 if (jugador1.isListo() && jugador2.isListo()) {
                     estado = EstadoPartida.EN_CURSO;
-                    
-                    // Intentar pasar la barrera (demuestra uso de CyclicBarrier del temario)
-                    try {
-                        barrierInicioPartida.await();
-                    } catch (InterruptedException e) {
-                        System.err.println("Partida " + id + " - Barrera interrumpida: " + e.getMessage());
-                        Thread.currentThread().interrupt();
-                    } catch (BrokenBarrierException e) {
-                        System.err.println("Partida " + id + " - Barrera rota: " + e.getMessage());
-                    }
+                    iniciarJuego = true;
                 }
             }
+        }
+        
+        // Fuera del lock, iniciamos si corresponde
+        if (iniciarJuego) {
+            System.out.println("Partida " + id + " iniciada (ambos listos)");
+            // No notificamos aquí directamente porque necesitamos enviar mensajes a ambos.
+            // Dejamos que el ManejadorCliente que llamó a este método se encargue, 
+            // OJO: El ManejadorCliente llama a 'procesarListo', que verifica 'ambosJugadoresListos'.
+            // Así que con actualizar el estado es suficiente.
         }
     }
     
