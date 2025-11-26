@@ -62,11 +62,11 @@ public class Colores {
      */
     public static class Battleship {
         // Colores para tipos de barcos
-        public static final String PORTAAVIONES = MORADO_BRILLANTE;
-        public static final String ACORAZADO = AZUL_BRILLANTE;
+        public static final String PORTAAVIONES = AMARILLO_BRILLANTE;
+        public static final String ACORAZADO = VERDE_BRILLANTE;
         public static final String CRUCERO = CYAN_BRILLANTE;
-        public static final String SUBMARINO = VERDE_BRILLANTE;
-        public static final String DESTRUCTOR = AMARILLO_BRILLANTE;
+        public static final String SUBMARINO = AZUL_BRILLANTE;
+        public static final String DESTRUCTOR = MORADO_BRILLANTE;
         
         // Colores para estados
         public static final String AGUA = AZUL;

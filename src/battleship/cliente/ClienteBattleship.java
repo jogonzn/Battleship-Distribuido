@@ -20,7 +20,7 @@ public class ClienteBattleship {
     
     private Socket socket;
     private BufferedReader br;
-    private DataOutputStream dos;
+    private PrintWriter out;
     private BufferedReader inputReader; // Lector de entrada del usuario
     
     private String nombreJugador;
@@ -47,8 +47,8 @@ public class ClienteBattleship {
      */
     public void iniciar() {
         try (Socket socketLocal = new Socket(HOST, PUERTO);
-             BufferedReader brLocal = new BufferedReader(new InputStreamReader(socketLocal.getInputStream()));
-             DataOutputStream dosLocal = new DataOutputStream(socketLocal.getOutputStream())) {
+            BufferedReader brLocal = new BufferedReader(new InputStreamReader(socketLocal.getInputStream(), "UTF-8"));
+            PrintWriter outLocal = new PrintWriter(new OutputStreamWriter(socketLocal.getOutputStream(), "UTF-8"), true)) {
             
             System.out.println("====================================");
             System.out.println("  Cliente Battleship");
@@ -58,7 +58,7 @@ public class ClienteBattleship {
             // Asignar a variables de instancia para uso en otros métodos
             this.socket = socketLocal;
             this.br = brLocal;
-            this.dos = dosLocal;
+            this.out = outLocal;
             
             System.out.println("Conectado al servidor\n");
             
@@ -217,9 +217,23 @@ public class ClienteBattleship {
                     Tablero.ColocacionResultado resultado = miTablero.colocarBarcoDetallado(barco, inicio, orientacion);
                     switch (resultado) {
                         case EXITO:
-                            enviarMensaje(new Mensaje(Mensaje.COLOCAR_BARCO, tipo.name(), String.valueOf(fila), String.valueOf(columna), orientacionStr));
-                            colocado = true;
-                            System.out.println(Colores.Battleship.EXITO + "✓ Barco colocado exitosamente" + Colores.RESET);
+                            // Enviar y esperar confirmación del servidor
+                            synchronized (cerrojoColocacion) {
+                                confirmacionRecibida = false;
+                                errorColocacion = false;
+                                try {
+                                    while (!confirmacionRecibida && !errorColocacion) {
+                                        cerrojoColocacion.wait();
+                                    }
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                }
+                            }
+                            if (!errorColocacion) {
+                                colocado = true;
+                                // El mensaje de éxito lo imprime el receptor
+                            }
+                            // Si hubo error, el bucle repite
                             break;
                         case FUERA_DE_RANGO:
                             System.out.println(Colores.Battleship.ERROR + "✗ Fuera de rango: el barco excede el tablero" + Colores.RESET);
@@ -319,12 +333,8 @@ public class ClienteBattleship {
      * Envía un mensaje al servidor.
      */
     private void enviarMensaje(Mensaje mensaje) {
-        try {
-            dos.writeBytes(mensaje.serializar());
-            dos.flush();
-        } catch (IOException e) {
-            System.err.println("Error enviando mensaje: " + e.getMessage());
-        }
+        out.print(mensaje.serializar());
+        out.flush(); 
     }
     
     /**

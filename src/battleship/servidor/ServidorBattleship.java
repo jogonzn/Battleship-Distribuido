@@ -33,7 +33,7 @@ public class ServidorBattleship {
     private static CopyOnWriteArrayList<Partida> partidas = new CopyOnWriteArrayList<>();
     
     // Caché de streams de salida por socket (thread-safe)
-    private static ConcurrentHashMap<Socket, DataOutputStream> streamsPorSocket = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<Socket, PrintWriter> streamsPorSocket = new ConcurrentHashMap<>();
     
     // Contador para IDs de partidas
     private static int contadorPartidas = 1;
@@ -144,10 +144,10 @@ public class ServidorBattleship {
      * @return DataOutputStream asociado al socket
      * @throws IOException si hay error al crear el stream
      */
-    public static DataOutputStream obtenerStream(Socket socket) throws IOException {
+    public static PrintWriter obtenerStream(Socket socket) throws IOException {
         return streamsPorSocket.computeIfAbsent(socket, s -> {
             try {
-                return new DataOutputStream(s.getOutputStream());
+                return new PrintWriter(new OutputStreamWriter(s.getOutputStream(), "UTF-8"), true);
             } catch (IOException e) {
                 throw new RuntimeException("Error creando stream", e);
             }
@@ -185,7 +185,7 @@ public class ServidorBattleship {
 class ManejadorCliente implements Runnable {
     
     private Socket socket;
-    private DataOutputStream dos;
+    private PrintWriter out;
     private String nombreJugador;
     
     public ManejadorCliente(Socket socket) {
@@ -194,11 +194,10 @@ class ManejadorCliente implements Runnable {
     
     @Override
     public void run() {
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             DataOutputStream dosLocal = new DataOutputStream(socket.getOutputStream())) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+            PrintWriter outLocal = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true)) {
             
-            // Asignar a variable de instancia para uso en métodos
-            this.dos = dosLocal;
+            this.out = outLocal;
             
             // Enviar mensaje de bienvenida
             enviarMensaje(new Mensaje(Mensaje.BIENVENIDA, "Conectado al servidor Battleship"));
@@ -476,12 +475,8 @@ class ManejadorCliente implements Runnable {
      * Envía un mensaje al cliente.
      */
     private void enviarMensaje(Mensaje mensaje) {
-        try {
-            dos.writeBytes(mensaje.serializar());
-            dos.flush();
-        } catch (IOException e) {
-            System.err.println("Error enviando mensaje: " + e.getMessage());
-        }
+        out.print(mensaje.serializar());
+        out.flush(); 
     }
     
     /**
@@ -493,9 +488,9 @@ class ManejadorCliente implements Runnable {
      */
     private void enviarMensajeA(Socket destino, Mensaje mensaje) {
         try {
-            DataOutputStream dosDestino = ServidorBattleship.obtenerStream(destino);
-            dosDestino.writeBytes(mensaje.serializar());
-            dosDestino.flush();
+            PrintWriter outDestino = ServidorBattleship.obtenerStream(destino);
+            outDestino.print(mensaje.serializar());
+            outDestino.flush();
         } catch (IOException e) {
             System.err.println("Error enviando mensaje: " + e.getMessage());
         } catch (RuntimeException e) {
