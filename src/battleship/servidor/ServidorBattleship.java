@@ -43,7 +43,7 @@ public class ServidorBattleship {
     
     public static void main(String[] args) {
         System.out.println("====================================");
-        System.out.println("  Servidor Battleship");
+        System.out.println("       Servidor Battleship");
         System.out.println("====================================");
         
         try (ServerSocket ss = new ServerSocket(PUERTO)) {

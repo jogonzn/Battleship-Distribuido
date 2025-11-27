@@ -55,7 +55,7 @@ public class ClienteBattleship {
             PrintWriter outLocal = new PrintWriter(new OutputStreamWriter(socketLocal.getOutputStream(), "UTF-8"), true)) {
             
             System.out.println("====================================");
-            System.out.println("  Cliente Battleship");
+            System.out.println("        Cliente Battleship");
             System.out.println("====================================");
             System.out.println("Conectando al servidor...\n");
             
@@ -109,34 +109,44 @@ public class ClienteBattleship {
      */
     private void mostrarMenu() {
         boolean salir = false;
+        // Nueva variable para saber si estamos esperando confirmación del servidor
+        boolean esperandoRespuesta = false;
         
         try {
-            while (!salir && !enJuego) {
+            // Añadimos !esperandoRespuesta a la condición
+            while (!salir && !enJuego && !esperandoRespuesta) {
                 System.out.println("\n====== MENÚ PRINCIPAL ======");
                 System.out.println("1. Crear nueva partida");
                 System.out.println("2. Unirse a partida existente");
                 System.out.println("3. Salir");
                 System.out.print("Opción: ");
                 System.out.flush();
-                String opcion = leerLineaMenuAbortable(); // retorna null si enJuego se activa
+                
+                String opcion = leerLineaMenuAbortable();
                 if (enJuego || opcion == null) break;
+                
                 switch (opcion.trim()) {
                     case "1":
                         enviarMensaje(new Mensaje(Mensaje.CREAR_PARTIDA));
+                        // Marcamos que estamos esperando para salir del bucle del menú
+                        esperandoRespuesta = true; 
+                        System.out.println("Solicitud enviada, esperando al servidor...");
                         break;
                     case "2":
                         System.out.print("ID de la partida: ");
                         System.out.flush();
                         String idStr = leerLineaMenuAbortable();
                         if (idStr != null && !enJuego) {
-                            // Validar ID de partida
                             try {
                                 int idPartida = Integer.parseInt(idStr.trim());
                                 if (idPartida <= 0) {
                                     System.out.println(Colores.Battleship.ERROR + "✗ El ID debe ser un número positivo" + Colores.RESET);
-                                    break;
+                                    break; // Vuelve al menú
                                 }
                                 enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, String.valueOf(idPartida)));
+                                // Marcamos que estamos esperando
+                                esperandoRespuesta = true;
+                                System.out.println("Solicitud enviada, esperando al servidor...");
                             } catch (NumberFormatException e) {
                                 System.out.println(Colores.Battleship.ERROR + "✗ ID inválido, debe ser un número" + Colores.RESET);
                             }
@@ -152,13 +162,19 @@ public class ClienteBattleship {
                 }
             }
             
-            // Si el juego comenzó, esperar señal y colocar barcos
-            if (!salir && enJuego) {
+            // Lógica modificada: Si no hemos salido voluntariamente, esperamos.
+            // Esto cubre tanto si 'enJuego' ya es true como si estamos 'esperandoRespuesta'.
+            if (!salir) {
                 try {
-                    iniciarColocacion.await(); // Espera señal de COLOCAR_BARCOS
+                    // Bloqueamos el hilo principal hasta que llegue el mensaje COLOCAR_BARCOS
+                    // (que ejecuta iniciarColocacion.countDown() en el otro hilo)
+                    iniciarColocacion.await(); 
                 } catch (InterruptedException ignored) {}
-                // Pasamos directamente a colocar barcos sin manipular buffers
-                colocarBarcos();
+                
+                // Al despertar, verificamos si realmente estamos en juego
+                if (enJuego) {
+                    colocarBarcos();
+                }
             }
             
         } catch (IOException e) {
@@ -167,7 +183,7 @@ public class ClienteBattleship {
             }
         }
         
-        if (!enJuego) {
+        if (!enJuego && !esperandoRespuesta) {
             cerrar();
         }
     }
@@ -177,7 +193,7 @@ public class ClienteBattleship {
      */
     private synchronized void colocarBarcos() {
         System.out.println("\n" + Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
-        System.out.println(Colores.Battleship.TITULO + "====== COLOCACIÓN DE BARCOS ======" + Colores.RESET);
+        System.out.println(Colores.Battleship.TITULO + "============== COLOCACIÓN DE BARCOS ==============" + Colores.RESET);
         System.out.println(Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
         System.out.println("\n🚢 " + Colores.AMARILLO_BRILLANTE + "Debes colocar 5 barcos en tu tablero:" + Colores.RESET);
         System.out.println("  " + Colores.Battleship.PORTAAVIONES + "P" + Colores.RESET + " = Portaaviones (5)");
@@ -267,7 +283,7 @@ public class ClienteBattleship {
     private synchronized void realizarDisparo() {
         try {
             System.out.println("\n" + Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
-            System.out.println(Colores.Battleship.TITULO + "====== 🎯 TU TURNO 🎯 ======" + Colores.RESET);
+            System.out.println(Colores.Battleship.TITULO + "============== TU TURNO ==============" + Colores.RESET);
             System.out.println(Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
             
             System.out.println("\n" + Colores.ROJO_BRILLANTE + "📍 TABLERO RIVAL" + Colores.RESET + " (tus disparos):");
