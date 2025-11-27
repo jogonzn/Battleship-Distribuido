@@ -2,7 +2,6 @@ package battleship.util;
 
 /**
  * Utilidad para aplicar colores ANSI a la consola.
- * Diseño de alto contraste compatible con fondos claros y oscuros.
  * * @author Jorge González Navas
  */
 public class Colores {

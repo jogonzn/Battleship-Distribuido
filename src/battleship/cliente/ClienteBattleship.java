@@ -166,7 +166,6 @@ public class ClienteBattleship {
             if (!salir) {
                 try {
                     // Esperamos a que el otro hilo (ReceptorMensajes) nos avise de que empieza la colocación
-                    // Esto usa CountDownLatch (Tema 6, Diapositiva 93-96)
                     iniciarColocacion.await(); 
                 } catch (InterruptedException ignored) {}
                 

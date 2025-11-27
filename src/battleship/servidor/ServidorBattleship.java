@@ -168,8 +168,6 @@ public class ServidorBattleship {
     
     /**
      * Verifica el estado del servidor de forma asíncrona usando Callable.
-     * Ejemplo de uso de Callable y Future del temario.
-     * 
      * @return Future con el número de partidas activas
      */
     public static Future<Integer> verificarEstadoAsync() {
