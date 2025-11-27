@@ -34,7 +34,7 @@ public class Mensaje {
      * @param comando Comando del mensaje
      * @param parametros Parámetros del mensaje
      */
-    public Mensaje(String comando, String... parametros) {
+    public Mensaje(String comando, String[] parametros) {
         this.comando = comando;
         this.parametros = parametros;
     }

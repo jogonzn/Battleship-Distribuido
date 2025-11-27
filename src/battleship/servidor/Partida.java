@@ -2,8 +2,6 @@ package battleship.servidor;
 
 import battleship.model.*;
 import java.net.Socket;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.BrokenBarrierException;
 
 /**
  * Representa una partida de Battleship entre dos jugadores.

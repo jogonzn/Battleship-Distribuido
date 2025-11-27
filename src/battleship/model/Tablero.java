@@ -260,17 +260,18 @@ public class Tablero {
         StringBuilder sb = new StringBuilder();
         
         // Encabezado de columnas con color
-        sb.append(Colores.CYAN_BRILLANTE).append("   ");
+        sb.append(Colores.CYAN_BRILLANTE + "   ");
         for (int i = 0; i < DIMENSION; i++) {
-            sb.append(" ").append(Colores.NEGRITA).append(i).append(Colores.RESET).append(Colores.CYAN_BRILLANTE);
+            sb.append(" " + Colores.NEGRITA + i + Colores.RESET + Colores.CYAN_BRILLANTE);
         }
-        sb.append(Colores.RESET).append("\n");
+        sb.append(Colores.RESET + "\n");
         
         // Filas del tablero
         for (int i = 0; i < DIMENSION; i++) {
-            // Número de fila con color
-            sb.append(Colores.CYAN_BRILLANTE).append(String.format("%2d ", i)).append(Colores.RESET);
-            
+            // Número de fila con color (Corrección String.format aplicada anteriormente)
+            String numeroFila = (i < 10) ? " " + i : String.valueOf(i);
+            sb.append(Colores.CYAN_BRILLANTE + numeroFila + " " + Colores.RESET);   
+
             for (int j = 0; j < DIMENSION; j++) {
                 EstadoCasilla casilla = casillas[i][j];
                 Coordenada coord = new Coordenada(i, j);
@@ -304,7 +305,7 @@ public class Tablero {
                         color = Colores.ROJO;
                 }
                 
-                sb.append(" ").append(color).append(simbolo).append(Colores.RESET);
+                sb.append(" " + color + simbolo + Colores.RESET);
             }
             sb.append("\n");
         }

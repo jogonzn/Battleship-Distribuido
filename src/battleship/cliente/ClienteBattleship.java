@@ -82,7 +82,7 @@ public class ClienteBattleship {
             nombreJugador = nombreJugador.trim();
             
             // Enviar mensaje de conexión
-            enviarMensaje(new Mensaje(Mensaje.CONECTAR, nombreJugador));
+            enviarMensaje(new Mensaje(Mensaje.CONECTAR, new String[]{nombreJugador}));
             
             // Crear hilo para recibir mensajes del servidor
             Thread hiloRecepcion = new Thread(new ReceptorMensajes());
@@ -144,7 +144,7 @@ public class ClienteBattleship {
                                     System.out.println(Colores.Battleship.ERROR + "✗ El ID debe ser positivo" + Colores.RESET);
                                     break; 
                                 }
-                                enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, String.valueOf(idPartida)));
+                                enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, new String[]{String.valueOf(idPartida)}));
                                 esperandoRespuesta = true;
                                 System.out.println("Solicitud enviada, esperando al servidor...");
                             } catch (NumberFormatException e) {
@@ -189,9 +189,11 @@ public class ClienteBattleship {
      * Solicita al usuario colocar todos sus barcos.
      */
     private synchronized void colocarBarcos() {
-        System.out.println("\n" + Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
+        System.out.print("\n" + Colores.Battleship.TITULO);
+        for(int i=0; i<50; i++) System.out.print("="); 
+        System.out.println(Colores.RESET);
         System.out.println(Colores.Battleship.TITULO + "============== COLOCACIÓN DE BARCOS ==============" + Colores.RESET);
-        System.out.println(Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
+        System.out.println("\n" + Colores.Battleship.TITULO + repetir(50, "=") + Colores.RESET);
         System.out.println("\n🚢 " + Colores.AMARILLO_BRILLANTE + "Debes colocar 5 barcos en tu tablero:" + Colores.RESET);
         System.out.println("  " + Colores.Battleship.PORTAAVIONES + "P" + Colores.RESET + " = Portaaviones (5)");
         System.out.println("  " + Colores.Battleship.ACORAZADO + "A" + Colores.RESET + " = Acorazado (4)");
@@ -234,7 +236,8 @@ public class ClienteBattleship {
                     switch (resultado) {
                         case EXITO:
                             // Enviar datos al servidor y esperar confirmación
-                            enviarMensaje(new Mensaje(Mensaje.COLOCAR_BARCO, tipo.name(), String.valueOf(fila), String.valueOf(columna), orientacionStr));
+                            String[] paramsColocacion = {tipo.name(), String.valueOf(fila), String.valueOf(columna), orientacionStr};
+                            enviarMensaje(new Mensaje(Mensaje.COLOCAR_BARCO, paramsColocacion));
                             synchronized (cerrojoColocacion) {
                                 confirmacionRecibida = false;
                                 errorColocacion = false;
@@ -279,9 +282,9 @@ public class ClienteBattleship {
      */
     private synchronized void realizarDisparo() {
         try {
-            System.out.println("\n" + Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
+            System.out.println("\n" + Colores.Battleship.TITULO + repetir(50, "=") + Colores.RESET);
             System.out.println(Colores.Battleship.TITULO + "============== TU TURNO ==============" + Colores.RESET);
-            System.out.println(Colores.Battleship.TITULO + "=".repeat(50) + Colores.RESET);
+            System.out.println(Colores.Battleship.TITULO + repetir(50, "=") + Colores.RESET);
             
             System.out.println("\n" + Colores.ROJO_BRILLANTE + "📍 TABLERO RIVAL" + Colores.RESET + " (tus disparos):");
             System.out.println("  " + Colores.Battleship.TOCADO + "X" + Colores.RESET + " = Tocado  |  " + 
@@ -301,7 +304,8 @@ public class ClienteBattleship {
             int fila = leerEntero(0, 9, "🎯 Fila del disparo (0-9): ");
             int columna = leerEntero(0, 9, "🎯 Columna del disparo (0-9): ");
             
-            enviarMensaje(new Mensaje(Mensaje.DISPARAR, String.valueOf(fila), String.valueOf(columna)));
+            String[] paramsDisparo = {String.valueOf(fila), String.valueOf(columna)};
+            enviarMensaje(new Mensaje(Mensaje.DISPARAR, paramsDisparo));
         } catch (IOException e) {
             System.err.println("Error leyendo entrada: " + e.getMessage());
         }
@@ -359,13 +363,25 @@ public class ClienteBattleship {
      */
     private void cerrar() {
         try {
-            if (socket != null && !socket.isClosed()) {
+            if (socket != null) {
                 socket.close();
             }
             System.out.println("Conexión cerrada");
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+    * Método auxiliar para replicar String.repeat() de Java 11
+    * Compatible con JDK 7.
+    */
+    private String repetir(int n, String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            sb.append(s);
+        }
+        return sb.toString();
     }
     
     /**
@@ -436,14 +452,14 @@ public class ClienteBattleship {
                     System.out.println("\n¡Barco " + mensaje.getParametro(0) + " HUNDIDO!");
                     break;
                 case Mensaje.VICTORIA:
-                    System.out.println("\n" + "=".repeat(40));
+                    System.out.println("\n" + repetir(40, "="));
                     System.out.println("¡VICTORIA! Has ganado la partida");
-                    System.out.println("=".repeat(40));
+                    System.out.println(repetir(40, "="));
                     break;
                 case Mensaje.DERROTA:
-                    System.out.println("\n" + "=".repeat(40));
+                    System.out.println("\n" + repetir(40, "="));
                     System.out.println("¡DERROTA! " + mensaje.getParametro(0) + " ha ganado");
-                    System.out.println("=".repeat(40));
+                    System.out.println(repetir(40, "="));
                     break;
                 case Mensaje.ERROR:
                     System.out.println("\n✗ Error: " + mensaje.getParametro(0));

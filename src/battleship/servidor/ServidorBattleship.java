@@ -202,7 +202,7 @@ class ManejadorCliente implements Runnable {
             this.out = outLocal;
             
             // Enviar mensaje de bienvenida
-            enviarMensaje(new Mensaje(Mensaje.BIENVENIDA, "Conectado al servidor Battleship"));
+            enviarMensaje(new Mensaje(Mensaje.BIENVENIDA, new String[]{"Conectado al servidor Battleship"}));
             
             // Bucle de procesamiento de mensajes
             String linea;
@@ -260,14 +260,14 @@ class ManejadorCliente implements Runnable {
                     break;
                     
                 default:
-                    enviarMensaje(new Mensaje(Mensaje.ERROR, "Comando desconocido"));
+                    enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Comando desconocido"}));
             }
         } catch (IllegalArgumentException e) {
             System.err.println("Error en parámetros: " + e.getMessage());
-            enviarMensaje(new Mensaje(Mensaje.ERROR, "Parámetros inválidos"));
+            enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Parámetros inválidos"}));
         } catch (IllegalStateException e) {
             System.err.println("Error de estado: " + e.getMessage());
-            enviarMensaje(new Mensaje(Mensaje.ERROR, e.getMessage()));
+            enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{e.getMessage()}));
         }
     }
     
@@ -286,11 +286,13 @@ class ManejadorCliente implements Runnable {
      */
     private void procesarCrearPartida(Mensaje mensaje) {
         try {
-            int idPartida = ServidorBattleship.crearPartida(nombreJugador, socket);
-            enviarMensaje(new Mensaje(Mensaje.PARTIDA_CREADA, String.valueOf(idPartida)));
+            int idPartida = ServidorBattleship.crearPartida(nombreJugador, socket);            
+            String[] paramsId = {String.valueOf(idPartida)};
+            enviarMensaje(new Mensaje(Mensaje.PARTIDA_CREADA, paramsId));            
             enviarMensaje(new Mensaje(Mensaje.ESPERANDO_RIVAL));
         } catch (IllegalStateException e) {
-            enviarMensaje(new Mensaje(Mensaje.ERROR, e.getMessage()));
+            String[] paramsError = {e.getMessage()};
+            enviarMensaje(new Mensaje(Mensaje.ERROR, paramsError));
         }
     }
     
@@ -309,18 +311,18 @@ class ManejadorCliente implements Runnable {
                         // Notificar a ambos jugadores
                         JugadorPartida rival = partida.obtenerRival(socket);
                         
-                        enviarMensaje(new Mensaje(Mensaje.RIVAL_CONECTADO, rival.getNombre()));
-                        enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.RIVAL_CONECTADO, nombreJugador));
+                        enviarMensaje(new Mensaje(Mensaje.RIVAL_CONECTADO, new String[]{rival.getNombre()}));
+                        enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.RIVAL_CONECTADO, new String[]{nombreJugador}));
                         
                         // Solicitar colocación de barcos
                         enviarMensaje(new Mensaje(Mensaje.COLOCAR_BARCOS));
                         enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.COLOCAR_BARCOS));
                     }
                 } else {
-                    enviarMensaje(new Mensaje(Mensaje.ERROR, "No se pudo unir a la partida"));
+                    enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"No se pudo unir a la partida"}));
                 }
             } catch (NumberFormatException e) {
-                enviarMensaje(new Mensaje(Mensaje.ERROR, "ID de partida inválido"));
+                enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"ID de partida inválido"}));
             }
         }
     }
@@ -346,7 +348,7 @@ class ManejadorCliente implements Runnable {
                 } else if ("V".equalsIgnoreCase(orientacionStr)) {
                     orientacion = Barco.Orientacion.VERTICAL;
                 } else {
-                    enviarMensaje(new Mensaje(Mensaje.ERROR, "Orientación inválida (usa H o V)"));
+                    enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Orientación inválida (usa H o V)"}));
                     return;
                 }
                 
@@ -361,14 +363,14 @@ class ManejadorCliente implements Runnable {
                     boolean exito = jugador.getTablero().colocarBarco(barco, inicio, orientacion);
                     
                     if (exito) {
-                        enviarMensaje(new Mensaje(Mensaje.BARCO_COLOCADO, tipoStr));
+                        enviarMensaje(new Mensaje(Mensaje.BARCO_COLOCADO, new String[]{tipoStr}));
                     } else {
-                        enviarMensaje(new Mensaje(Mensaje.ERROR, "No se pudo colocar el barco"));
+                        enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"No se pudo colocar el barco"}));
                     }
                 }
                 
             } catch (Exception e) {
-                enviarMensaje(new Mensaje(Mensaje.ERROR, "Parámetros inválidos: " + e.getMessage()));
+                enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Parámetros inválidos: " + e.getMessage()}));
             }
         }
     }
@@ -383,7 +385,7 @@ class ManejadorCliente implements Runnable {
             
             // Verificar que haya colocado todos los barcos
             if (!jugador.getTablero().todosBarcoColocados()) {
-                enviarMensaje(new Mensaje(Mensaje.ERROR, "Debes colocar todos los barcos primero"));
+                enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Debes colocar todos los barcos primero"}));
                 return;
             }
             
@@ -413,13 +415,13 @@ class ManejadorCliente implements Runnable {
                 
                 Partida partida = ServidorBattleship.obtenerPartida(socket);
                 if (partida == null) {
-                    enviarMensaje(new Mensaje(Mensaje.ERROR, "No estás en una partida"));
+                    enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"No estás en una partida"}));
                     return;
                 }
                 
                 // Verificar turno
                 if (!partida.esTurnoDeJugador(socket)) {
-                    enviarMensaje(new Mensaje(Mensaje.ERROR, "No es tu turno"));
+                    enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"No es tu turno"}));
                     return;
                 }
                 
@@ -427,20 +429,20 @@ class ManejadorCliente implements Runnable {
                 ResultadoDisparo resultado = partida.procesarDisparo(socket, fila, columna);
                 
                 if (resultado == ResultadoDisparo.YA_DISPARADO) {
-                    enviarMensaje(new Mensaje(Mensaje.ERROR, "Ya disparaste en esa posición"));
+                    enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Ya disparaste en esa posición"}));
                     // Devolver el turno al mismo jugador para que intente de nuevo
                     enviarMensaje(new Mensaje(Mensaje.TU_TURNO));
                     return;
                 }
                 
                 // Enviar resultado al jugador que disparó
-                enviarMensaje(new Mensaje(Mensaje.RESULTADO_DISPARO, 
-                    resultado.name(), String.valueOf(fila), String.valueOf(columna)));
+                String[] paramsRes = {resultado.name(), String.valueOf(fila), String.valueOf(columna)};
+                enviarMensaje(new Mensaje(Mensaje.RESULTADO_DISPARO, paramsRes));
                 
                 // Enviar disparo al rival
                 JugadorPartida rival = partida.obtenerRival(socket);
-                enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.DISPARO_RIVAL, 
-                    String.valueOf(fila), String.valueOf(columna), resultado.name()));
+                String[] paramsRival = {String.valueOf(fila), String.valueOf(columna), resultado.name()};
+                enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.DISPARO_RIVAL, paramsRival));
                 
                 // Si hundió un barco, notificar
                 if (resultado == ResultadoDisparo.HUNDIDO) {
@@ -448,15 +450,15 @@ class ManejadorCliente implements Runnable {
                     Barco barcoHundido = rival.getTablero().obtenerBarcoHundido(coord);
                     if (barcoHundido != null) {
                         String tipoBarco = barcoHundido.getTipo().name();
-                        enviarMensaje(new Mensaje(Mensaje.BARCO_HUNDIDO, tipoBarco));
-                        enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.BARCO_HUNDIDO, tipoBarco));
+                        enviarMensaje(new Mensaje(Mensaje.BARCO_HUNDIDO, new String[]{tipoBarco}));
+                        enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.BARCO_HUNDIDO, new String[]{tipoBarco}));
                     }
                 }
                 
                 // Verificar victoria
                 if (rival.getTablero().todosBarcosHundidos()) {
                     enviarMensaje(new Mensaje(Mensaje.VICTORIA));
-                    enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.DERROTA, nombreJugador));
+                    enviarMensajeA(rival.getSocket(), new Mensaje(Mensaje.DERROTA, new String[]{nombreJugador}));
                     
                     System.out.println("Partida " + partida.getId() + " finalizada. Ganador: " + nombreJugador);
                     ServidorBattleship.eliminarPartida(partida);
@@ -468,7 +470,7 @@ class ManejadorCliente implements Runnable {
                 }
                 
             } catch (NumberFormatException e) {
-                enviarMensaje(new Mensaje(Mensaje.ERROR, "Coordenadas inválidas"));
+                enviarMensaje(new Mensaje(Mensaje.ERROR, new String[]{"Coordenadas inválidas"}));
             }
         }
     }
@@ -511,7 +513,7 @@ class ManejadorCliente implements Runnable {
                 JugadorPartida rival = partida.obtenerRival(socket);
                 if (rival != null) {
                     enviarMensajeA(rival.getSocket(), 
-                        new Mensaje(Mensaje.ERROR, "El rival se desconectó"));
+                        new Mensaje(Mensaje.ERROR, new String[]{"El rival se desconectó"}));
                 }
                 ServidorBattleship.eliminarPartida(partida);
             }
