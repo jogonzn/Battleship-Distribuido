@@ -5,12 +5,14 @@ import battleship.model.*;
 import java.io.*;
 import java.net.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Servidor principal del juego Battleship.
@@ -29,8 +31,7 @@ public class ServidorBattleship {
     // Semáforo para limitar partidas concurrentes
     private static final Semaphore semaforoPartidas = new Semaphore(MAX_PARTIDAS);
     
-    // Lista de partidas activas (thread-safe)
-    private static CopyOnWriteArrayList<Partida> partidas = new CopyOnWriteArrayList<>();
+    private static List<Partida> partidas = Collections.synchronizedList(new ArrayList<Partida>());
     
     // Caché de streams de salida por socket (thread-safe)
     private static ConcurrentHashMap<Socket, PrintWriter> streamsPorSocket = new ConcurrentHashMap<>();
@@ -70,24 +71,25 @@ public class ServidorBattleship {
     
     /**
      * Crea una nueva partida.
-     * 
      * @param nombre Nombre del jugador creador
      * @param socket Socket del jugador
      * @return ID de la partida creada
      * @throws IllegalStateException si se alcanzó el límite de partidas
      */
-    public static synchronized int crearPartida(String nombre, Socket socket) {
-        if (!semaforoPartidas.tryAcquire()) {
-            throw new IllegalStateException("Máximo de partidas simultáneas alcanzado");
+    public static int crearPartida(String nombre, Socket socket) {
+        synchronized (partidas) {
+            if (partidas.size() >= MAX_PARTIDAS) {
+                throw new IllegalStateException("Máximo de partidas simultáneas alcanzado");
+            }
+            
+            int id = contadorPartidas++;
+            Partida partida = new Partida(id);
+            partida.agregarJugador(nombre, socket);
+            partidas.add(partida);
+            
+            System.out.println("Partida " + id + " creada por " + nombre);
+            return id;
         }
-        
-        int id = contadorPartidas++;
-        Partida partida = new Partida(id);
-        partida.agregarJugador(nombre, socket);
-        partidas.add(partida);
-        
-        System.out.println("Partida " + id + " creada por " + nombre);
-        return id;
     }
     
     /**
@@ -145,13 +147,14 @@ public class ServidorBattleship {
      * @throws IOException si hay error al crear el stream
      */
     public static PrintWriter obtenerStream(Socket socket) throws IOException {
-        return streamsPorSocket.computeIfAbsent(socket, s -> {
+        PrintWriter pw = streamsPorSocket.get(socket);
+        if (pw == null) {
             try {
-                return new PrintWriter(new OutputStreamWriter(s.getOutputStream(), "UTF-8"), true);
-            } catch (IOException e) {
-                throw new RuntimeException("Error creando stream", e);
-            }
-        });
+                pw = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true);
+                streamsPorSocket.put(socket, pw);
+            } catch (IOException e) { throw new RuntimeException(e); }
+        }
+        return pw;
     }
     
     /**
@@ -170,10 +173,11 @@ public class ServidorBattleship {
      * @return Future con el número de partidas activas
      */
     public static Future<Integer> verificarEstadoAsync() {
-        Callable<Integer> tarea = () -> {
-            // Simulación de operación costosa
-            Thread.sleep(100);
-            return partidas.size();
+        Callable<Integer> tarea = new Callable<Integer>() {
+            public Integer call() throws Exception {
+                Thread.sleep(100);
+                return partidas.size();
+            }
         };
         return pool.submit(tarea);
     }

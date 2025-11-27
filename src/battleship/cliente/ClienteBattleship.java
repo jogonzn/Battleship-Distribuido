@@ -109,11 +109,9 @@ public class ClienteBattleship {
      */
     private void mostrarMenu() {
         boolean salir = false;
-        // Nueva variable para saber si estamos esperando confirmación del servidor
-        boolean esperandoRespuesta = false;
+        boolean esperandoRespuesta = false; // Variable para controlar flujo tras pedir partida
         
         try {
-            // Añadimos !esperandoRespuesta a la condición
             while (!salir && !enJuego && !esperandoRespuesta) {
                 System.out.println("\n====== MENÚ PRINCIPAL ======");
                 System.out.println("1. Crear nueva partida");
@@ -122,33 +120,35 @@ public class ClienteBattleship {
                 System.out.print("Opción: ");
                 System.out.flush();
                 
-                String opcion = leerLineaMenuAbortable();
+                String opcion = inputReader.readLine();
+                
+                // Verificación de seguridad por si el socket se cerró o el juego empezó mientras esperábamos
                 if (enJuego || opcion == null) break;
                 
                 switch (opcion.trim()) {
                     case "1":
                         enviarMensaje(new Mensaje(Mensaje.CREAR_PARTIDA));
-                        // Marcamos que estamos esperando para salir del bucle del menú
                         esperandoRespuesta = true; 
                         System.out.println("Solicitud enviada, esperando al servidor...");
                         break;
                     case "2":
                         System.out.print("ID de la partida: ");
                         System.out.flush();
-                        String idStr = leerLineaMenuAbortable();
+                        // Lectura bloqueante estándar también aquí
+                        String idStr = inputReader.readLine();
+                        
                         if (idStr != null && !enJuego) {
                             try {
                                 int idPartida = Integer.parseInt(idStr.trim());
                                 if (idPartida <= 0) {
-                                    System.out.println(Colores.Battleship.ERROR + "✗ El ID debe ser un número positivo" + Colores.RESET);
-                                    break; // Vuelve al menú
+                                    System.out.println(Colores.Battleship.ERROR + "✗ El ID debe ser positivo" + Colores.RESET);
+                                    break; 
                                 }
                                 enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, String.valueOf(idPartida)));
-                                // Marcamos que estamos esperando
                                 esperandoRespuesta = true;
                                 System.out.println("Solicitud enviada, esperando al servidor...");
                             } catch (NumberFormatException e) {
-                                System.out.println(Colores.Battleship.ERROR + "✗ ID inválido, debe ser un número" + Colores.RESET);
+                                System.out.println(Colores.Battleship.ERROR + "✗ ID inválido" + Colores.RESET);
                             }
                         }
                         break;
@@ -162,16 +162,14 @@ public class ClienteBattleship {
                 }
             }
             
-            // Lógica modificada: Si no hemos salido voluntariamente, esperamos.
-            // Esto cubre tanto si 'enJuego' ya es true como si estamos 'esperandoRespuesta'.
+            // Si no hemos salido voluntariamente (estamos esperando partida o el juego empezó)
             if (!salir) {
                 try {
-                    // Bloqueamos el hilo principal hasta que llegue el mensaje COLOCAR_BARCOS
-                    // (que ejecuta iniciarColocacion.countDown() en el otro hilo)
+                    // Esperamos a que el otro hilo (ReceptorMensajes) nos avise de que empieza la colocación
+                    // Esto usa CountDownLatch (Tema 6, Diapositiva 93-96)
                     iniciarColocacion.await(); 
                 } catch (InterruptedException ignored) {}
                 
-                // Al despertar, verificamos si realmente estamos en juego
                 if (enJuego) {
                     colocarBarcos();
                 }
@@ -499,20 +497,5 @@ public class ClienteBattleship {
             System.out.println(Colores.VERDE_BRILLANTE + "\nTU TABLERO ACTUALIZADO:" + Colores.RESET);
             System.out.println(miTablero.obtenerVisualizacion(true));
         }
-    }
-
-    /**
-     * Lee una línea para el menú sin quedar bloqueado si comienza el juego.
-     * Devuelve null si `enJuego` cambia antes de recibir una línea.
-     */
-    private String leerLineaMenuAbortable() throws IOException {
-        while (!enJuego) {
-            // Si hay una línea completa disponible usamos readLine normal
-            if (inputReader.ready()) {
-                return inputReader.readLine();
-            }
-            try { Thread.sleep(40); } catch (InterruptedException ignored) {}
-        }
-        return null; // juego empezó
     }
 }
