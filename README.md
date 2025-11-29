@@ -1,5 +1,5 @@
 # Battleship Distribuido
-Implementación de Battleship (Hundir la Flota) con una arquitectura Cliente-Servidor clásica sobre TCP, diseñada para ser sólida y gestionar la concurrencia de forma eficaz. Me he ceñido estrictamente a las herramientas de alto nivel de Java vistas en la asignatura. 
+Implementación de Battleship (Hundir la Flota) con una arquitectura Cliente-Servidor clásica sobre TCP, diseñada para ser sólida y gestionar la concurrencia de forma eficaz.
 
 ## Funcionamiento
 La aplicación permite enfrentamientos en tiempo real entre múltiples parejas.
