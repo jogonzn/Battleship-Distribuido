@@ -4,9 +4,6 @@ import battleship.model.Tablero;
 import java.net.Socket;
 
 /**
- * Representa un jugador dentro de una partida.
- * Contiene el socket de conexión, tablero y estado del jugador.
- * 
  * @author Jorge González Navas
  */
 public class JugadorPartida {

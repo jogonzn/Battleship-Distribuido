@@ -15,9 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Servidor principal del juego Battleship.
- * Gestiona conexiones de clientes y partidas activas.
- * 
  * @author Jorge González Navas
  */
 public class ServidorBattleship {
@@ -54,9 +51,7 @@ public class ServidorBattleship {
             while (true) {
                 Socket cliente = ss.accept();
                 System.out.println("Nueva conexión desde: " + cliente.getInetAddress());
-                
-                // Crear hilo para manejar el cliente
-                // El socket se cerrará automáticamente en ManejadorCliente.run()
+            
                 pool.execute(new ManejadorCliente(cliente));
             }
             
@@ -74,12 +69,13 @@ public class ServidorBattleship {
      * @param nombre Nombre del jugador creador
      * @param socket Socket del jugador
      * @return ID de la partida creada
-     * @throws IllegalStateException si se alcanzó el límite de partidas
      */
     public static int crearPartida(String nombre, Socket socket) {
         synchronized (partidas) {
-            if (partidas.size() >= MAX_PARTIDAS) {
-                throw new IllegalStateException("Máximo de partidas simultáneas alcanzado");
+            try {
+                semaforoPartidas.acquire();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
             
             int id = contadorPartidas++;
@@ -100,14 +96,16 @@ public class ServidorBattleship {
      * @param socket Socket del jugador
      * @return true si se unió exitosamente
      */
-    public static synchronized boolean unirseAPartida(int idPartida, String nombre, Socket socket) {
-        for (Partida partida : partidas) {
-            if (partida.getId() == idPartida && !partida.estaCompleta()) {
-                boolean exito = partida.agregarJugador(nombre, socket);
-                if (exito) {
-                    System.out.println(nombre + " se unió a la partida " + idPartida);
+    public static boolean unirseAPartida(int idPartida, String nombre, Socket socket) {
+        synchronized (partidas) { 
+            for (Partida partida : partidas) {
+                if (partida.getId() == idPartida && !partida.estaCompleta()) {
+                    boolean exito = partida.agregarJugador(nombre, socket);
+                    if (exito) {
+                        System.out.println(nombre + " se unió a la partida " + idPartida);
+                    }
+                    return exito;
                 }
-                return exito;
             }
         }
         return false;
@@ -119,10 +117,12 @@ public class ServidorBattleship {
      * @param socket Socket del jugador
      * @return Partida del jugador o null
      */
-    public static synchronized Partida obtenerPartida(Socket socket) {
-        for (Partida partida : partidas) {
-            if (partida.contieneJugador(socket)) {
-                return partida;
+    public static Partida obtenerPartida(Socket socket) {
+        synchronized (partidas) { 
+            for (Partida partida : partidas) {
+                if (partida.contieneJugador(socket)) {
+                    return partida;
+                }
             }
         }
         return null;
@@ -133,28 +133,20 @@ public class ServidorBattleship {
      * 
      * @param partida Partida a eliminar
      */
-    public static synchronized void eliminarPartida(Partida partida) {
-        partidas.remove(partida);
-        semaforoPartidas.release(); // Liberar permiso del semáforo
-        System.out.println("Partida " + partida.getId() + " eliminada");
+    public static void eliminarPartida(Partida partida) {
+        synchronized (partidas) { 
+            partidas.remove(partida);
+            semaforoPartidas.release(); 
+            System.out.println("Partida " + partida.getId() + " eliminada");
+        }
     }
     
-    /**
-     * Obtiene el stream de salida cacheado para un socket.
-     * 
-     * @param socket Socket del cual obtener el stream
-     * @return DataOutputStream asociado al socket
-     * @throws IOException si hay error al crear el stream
-     */
-    public static PrintWriter obtenerStream(Socket socket) throws IOException {
-        PrintWriter pw = streamsPorSocket.get(socket);
-        if (pw == null) {
-            try {
-                pw = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true);
-                streamsPorSocket.put(socket, pw);
-            } catch (IOException e) { throw new RuntimeException(e); }
-        }
-        return pw;
+    public static void registrarStream(Socket socket, PrintWriter out) {
+        streamsPorSocket.put(socket, out);
+    }
+
+    public static PrintWriter obtenerStream(Socket socket) {
+        return streamsPorSocket.get(socket);
     }
     
     /**
@@ -200,6 +192,7 @@ class ManejadorCliente implements Runnable {
             PrintWriter outLocal = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true)) {
             
             this.out = outLocal;
+            ServidorBattleship.registrarStream(socket, outLocal);
             
             // Enviar mensaje de bienvenida
             enviarMensaje(new Mensaje(Mensaje.BIENVENIDA, new String[]{"Conectado al servidor Battleship"}));
@@ -211,7 +204,6 @@ class ManejadorCliente implements Runnable {
                 if (mensaje == null) {
                     continue;
                 }
-                // Log diferido: primero procesamos para asegurar nombreJugador asignado
                 String nombreAntes = nombreJugador; // puede ser null antes de CONECTAR
                 procesarMensaje(mensaje);
                 String nombreDespues = (nombreJugador != null) ? nombreJugador : nombreAntes;
@@ -493,12 +485,19 @@ class ManejadorCliente implements Runnable {
     private void enviarMensajeA(Socket destino, Mensaje mensaje) {
         try {
             PrintWriter outDestino = ServidorBattleship.obtenerStream(destino);
-            outDestino.print(mensaje.serializar());
-            outDestino.flush();
-        } catch (IOException e) {
-            System.err.println("Error enviando mensaje: " + e.getMessage());
+            if (outDestino != null) { 
+                // Correcto: Bloque synchronized para garantizar atomicidad [Fichero 06]
+                synchronized (outDestino) {
+                    outDestino.print(mensaje.serializar());
+                    outDestino.flush(); // Importante hacer flush [Fichero 03]
+                }
+            }
         } catch (RuntimeException e) {
-            System.err.println("Error obteniendo stream: " + e.getCause().getMessage());
+            // Capturamos primero la excepción específica que lanza obtenerStream
+            System.err.println("Error obteniendo stream: " + e.getMessage());
+        } catch (Exception e) {
+            // Capturamos cualquier otra excepción general al final
+            System.err.println("Error enviando mensaje: " + e.getMessage());
         }
     }
     

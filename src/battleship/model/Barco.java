@@ -3,9 +3,6 @@ package battleship.model;
 import java.util.ArrayList;
 
 /**
- * Representa un barco en el juego Battleship.
- * Cada barco tiene un tipo, tamaño y ocupa varias posiciones en el tablero.
- * 
  * @author Jorge González Navas
  */
 public class Barco {

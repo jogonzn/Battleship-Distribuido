@@ -1,9 +1,6 @@
 package battleship.protocol;
 
 /**
- * Clase que representa un mensaje en el protocolo de Battleship.
- * Los mensajes siguen el formato: COMANDO|param1|param2|...\r\n
- * 
  * @author Jorge González Navas
  */
 public class Mensaje {

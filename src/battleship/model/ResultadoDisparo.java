@@ -1,8 +1,6 @@
 package battleship.model;
 
 /**
- * Enumeración que representa los posibles resultados de un disparo.
- * 
  * @author Jorge González Navas
  */
 public enum ResultadoDisparo {

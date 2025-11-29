@@ -4,9 +4,6 @@ import battleship.model.*;
 import java.net.Socket;
 
 /**
- * Representa una partida de Battleship entre dos jugadores.
- * Gestiona el estado de la partida y la lógica del juego.
- * 
  * @author Jorge González Navas
  */
 public class Partida {
@@ -167,7 +164,6 @@ public class Partida {
     
     /**
      * Marca que un jugador está listo (terminó de colocar barcos).
-     * Utiliza CyclicBarrier para sincronizar el inicio cuando ambos jugadores están listos.
      * @param socket Socket del jugador que está listo
      */
     public void marcarJugadorListo(Socket socket) {

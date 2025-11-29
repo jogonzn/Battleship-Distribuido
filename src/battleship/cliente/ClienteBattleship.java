@@ -6,11 +6,11 @@ import battleship.util.Colores;
 import java.io.*;
 import java.net.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Cliente del juego Battleship.
- * Permite conectarse al servidor y jugar partidas.
- * 
  * @author Jorge González Navas
  */
 public class ClienteBattleship {
@@ -31,12 +31,19 @@ public class ClienteBattleship {
     private volatile boolean enJuego = false;
     private CountDownLatch iniciarColocacion = new CountDownLatch(1);
     // Sincronización para colocación de barcos
-    private final Object cerrojoColocacion = new Object();
+    private Semaphore semaforoColocacion = new Semaphore(0);
+    private CountDownLatch finPartida = new CountDownLatch(1);
     private volatile boolean confirmacionRecibida = false;
     private volatile boolean errorColocacion = false;
+
+    private ExecutorService executor;
     
     public ClienteBattleship() {
-        this.inputReader = new BufferedReader(new InputStreamReader(System.in));
+        try {
+            this.inputReader = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
         this.miTablero = new Tablero();
         this.tableroRival = new Tablero();
     }
@@ -84,23 +91,17 @@ public class ClienteBattleship {
             // Enviar mensaje de conexión
             enviarMensaje(new Mensaje(Mensaje.CONECTAR, new String[]{nombreJugador}));
             
-            // Crear hilo para recibir mensajes del servidor
-            Thread hiloRecepcion = new Thread(new ReceptorMensajes());
-            hiloRecepcion.start();
+            // Usamos newSingleThreadExecutor porque solo necesitamos un hilo para escuchar
+            executor = Executors.newSingleThreadExecutor();
+            executor.execute(new ReceptorMensajes());
             
             // Menú principal en el hilo principal
             mostrarMenu();
-            
-            // Esperar a que el hilo de recepción termine
-            hiloRecepcion.join();
             
         } catch (UnknownHostException e) {
             System.err.println("No se pudo conectar al servidor: " + e.getMessage());
         } catch (IOException e) {
             System.err.println("Error de conexión: " + e.getMessage());
-        } catch (InterruptedException e) {
-            System.err.println("Hilo interrumpido: " + e.getMessage());
-            Thread.currentThread().interrupt();
         }
     }
     
@@ -109,82 +110,101 @@ public class ClienteBattleship {
      */
     private void mostrarMenu() {
         boolean salir = false;
-        boolean esperandoRespuesta = false; // Variable para controlar flujo tras pedir partida
         
         try {
-            while (!salir && !enJuego && !esperandoRespuesta) {
-                System.out.println("\n====== MENÚ PRINCIPAL ======");
-                System.out.println("1. Crear nueva partida");
-                System.out.println("2. Unirse a partida existente");
-                System.out.println("3. Salir");
-                System.out.print("Opción: ");
-                System.out.flush();
-                
-                String opcion = inputReader.readLine();
-                
-                // Verificación de seguridad por si el socket se cerró o el juego empezó mientras esperábamos
-                if (enJuego || opcion == null) break;
-                
-                switch (opcion.trim()) {
-                    case "1":
-                        enviarMensaje(new Mensaje(Mensaje.CREAR_PARTIDA));
-                        esperandoRespuesta = true; 
-                        System.out.println("Solicitud enviada, esperando al servidor...");
-                        break;
-                    case "2":
-                        System.out.print("ID de la partida: ");
-                        System.out.flush();
-                        // Lectura bloqueante estándar también aquí
-                        String idStr = inputReader.readLine();
-                        
-                        if (idStr != null && !enJuego) {
-                            try {
-                                int idPartida = Integer.parseInt(idStr.trim());
-                                if (idPartida <= 0) {
-                                    System.out.println(Colores.Battleship.ERROR + "✗ El ID debe ser positivo" + Colores.RESET);
-                                    break; 
+            while (!salir) {
+                // Si no estamos en juego ni esperando, mostramos menú
+                if (!enJuego && !confirmacionRecibida) {
+                    System.out.println("\n====== MENÚ PRINCIPAL ======");
+                    System.out.println("1. Crear nueva partida");
+                    System.out.println("2. Unirse a partida existente");
+                    System.out.println("3. Salir");
+                    System.out.print("Opción: ");
+                    System.out.flush();
+                    
+                    String opcion = inputReader.readLine();
+                    if (opcion == null) break; // Fin del stream
+                    
+                    switch (opcion.trim()) {
+                        case "1":
+                            enviarMensaje(new Mensaje(Mensaje.CREAR_PARTIDA));
+                            System.out.println("Solicitud enviada, esperando al servidor...");
+                            // Bloqueamos aquí esperando a que empiece el juego o ocurra un error
+                            esperarInicioJuego();
+                            break;
+                        case "2":
+                            System.out.print("ID de la partida: ");
+                            System.out.flush();
+                            String idStr = inputReader.readLine();
+                            if (idStr != null) {
+                                try {
+                                    int idPartida = Integer.parseInt(idStr.trim());
+                                    enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, new String[]{String.valueOf(idPartida)}));
+                                    System.out.println("Solicitud enviada, esperando al servidor...");
+                                    esperarInicioJuego();
+                                } catch (NumberFormatException e) {
+                                    System.out.println("ID inválido");
                                 }
-                                enviarMensaje(new Mensaje(Mensaje.UNIR_PARTIDA, new String[]{String.valueOf(idPartida)}));
-                                esperandoRespuesta = true;
-                                System.out.println("Solicitud enviada, esperando al servidor...");
-                            } catch (NumberFormatException e) {
-                                System.out.println(Colores.Battleship.ERROR + "✗ ID inválido" + Colores.RESET);
                             }
-                        }
-                        break;
-                    case "3":
-                        enviarMensaje(new Mensaje(Mensaje.DESCONECTAR));
-                        salir = true;
-                        cerrar();
-                        break;
-                    default:
-                        if (!enJuego) System.out.println("Opción inválida");
+                            if (!enJuego) resetearJuego();
+                            break;
+                        case "3":
+                            enviarMensaje(new Mensaje(Mensaje.DESCONECTAR));
+                            salir = true;
+                            break;
+                        default:
+                            System.out.println("Opción inválida");
+                    }
                 }
-            }
-            
-            // Si no hemos salido voluntariamente (estamos esperando partida o el juego empezó)
-            if (!salir) {
-                try {
-                    // Esperamos a que el otro hilo (ReceptorMensajes) nos avise de que empieza la colocación
-                    iniciarColocacion.await(); 
-                } catch (InterruptedException ignored) {}
                 
+                // Si el juego ha comenzado (gestionado por esperarInicioJuego o asíncronamente)
                 if (enJuego) {
                     colocarBarcos();
+                    try {
+                        // Esperar a que termine la partida (Tema 6: CountDownLatch)
+                        finPartida.await(); 
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    // Al terminar la partida, reseteamos el estado para volver al menú
+                    resetearJuego();
                 }
             }
-            
         } catch (IOException e) {
-            if (!enJuego) {
-                System.err.println("Error leyendo entrada: " + e.getMessage());
-            }
-        }
-        
-        if (!enJuego && !esperandoRespuesta) {
+            System.err.println("Error en el cliente: " + e.getMessage());
+        } finally {
             cerrar();
         }
     }
-    
+
+    /**
+     * Método auxiliar para bloquear el hilo principal mientras se espera partida.
+     */
+    private void esperarInicioJuego() {
+        try {
+            // Esperamos a que el servidor nos mande COLOCAR_BARCOS (que baja este latch)
+            iniciarColocacion.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Resetea los mecanismos de sincronización para una nueva partida.
+     * Necesario porque CountDownLatch no es reutilizable (Tema 6).
+     */
+    private void resetearJuego() {
+        enJuego = false;
+        confirmacionRecibida = false;
+        errorColocacion = false;
+        // Reinicializamos los Latches para la siguiente ronda
+        iniciarColocacion = new CountDownLatch(1);
+        finPartida = new CountDownLatch(1);
+        // Limpiamos tableros
+        this.miTablero = new Tablero();
+        this.tableroRival = new Tablero();
+    }
+
     /**
      * Solicita al usuario colocar todos sus barcos.
      */
@@ -238,16 +258,13 @@ public class ClienteBattleship {
                             // Enviar datos al servidor y esperar confirmación
                             String[] paramsColocacion = {tipo.name(), String.valueOf(fila), String.valueOf(columna), orientacionStr};
                             enviarMensaje(new Mensaje(Mensaje.COLOCAR_BARCO, paramsColocacion));
-                            synchronized (cerrojoColocacion) {
-                                confirmacionRecibida = false;
-                                errorColocacion = false;
-                                try {
-                                    while (!confirmacionRecibida && !errorColocacion) {
-                                        cerrojoColocacion.wait();
-                                    }
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                }
+                            confirmacionRecibida = false;
+                            errorColocacion = false;
+                            try {
+                                // Bloqueamos hasta recibir un permiso (release) del hilo receptor
+                                semaforoColocacion.acquire(); 
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
                             }
                             if (!errorColocacion) {
                                 colocado = true;
@@ -366,6 +383,11 @@ public class ClienteBattleship {
             if (socket != null) {
                 socket.close();
             }
+
+            if (executor != null && !executor.isShutdown()) {
+                executor.shutdownNow();
+            }
+            
             System.out.println("Conexión cerrada");
         } catch (IOException e) {
             e.printStackTrace();
@@ -430,11 +452,10 @@ public class ClienteBattleship {
                 case Mensaje.BARCO_COLOCADO:
                     System.out.println("\n" + Colores.Battleship.EXITO + "✔ Servidor confirmó barco: " + mensaje.getParametro(0) + Colores.RESET);
                     // Desbloquear al hilo main para continuar con el siguiente barco
-                    synchronized (cerrojoColocacion) {
-                        confirmacionRecibida = true;
-                        errorColocacion = false;
-                        cerrojoColocacion.notifyAll();
-                    }
+                    confirmacionRecibida = true;
+                    errorColocacion = false;
+                    // Liberamos un permiso para desbloquear al hilo principal
+                    semaforoColocacion.release();
                     break;
                 case Mensaje.TU_TURNO:
                     realizarDisparo();
@@ -455,21 +476,33 @@ public class ClienteBattleship {
                     System.out.println("\n" + repetir(40, "="));
                     System.out.println("¡VICTORIA! Has ganado la partida");
                     System.out.println(repetir(40, "="));
+                    finPartida.countDown();
                     break;
                 case Mensaje.DERROTA:
                     System.out.println("\n" + repetir(40, "="));
                     System.out.println("¡DERROTA! " + mensaje.getParametro(0) + " ha ganado");
                     System.out.println(repetir(40, "="));
+                    finPartida.countDown();
                     break;
                 case Mensaje.ERROR:
-                    System.out.println("\n✗ Error: " + mensaje.getParametro(0));
-                    // Si estamos en fase de colocación, desbloquear para reintentar
-                    if (enJuego) {
-                        synchronized (cerrojoColocacion) {
-                            confirmacionRecibida = true;
-                            errorColocacion = true;
-                            cerrojoColocacion.notifyAll();
-                        }
+                    String errorMsg = mensaje.getParametro(0);
+                    System.out.println("\n✗ Error: " + errorMsg);
+                    
+                    // Gestión de errores en fase de colocación
+                    if (enJuego && !confirmacionRecibida) {
+                        confirmacionRecibida = true;
+                        errorColocacion = true;
+                        semaforoColocacion.release();
+                    }
+                    
+                    // Esto evita que el jugador se quede esperando un turno que nunca llegará
+                    if (enJuego && errorMsg.toLowerCase().contains("desconectó")) {
+                        System.out.println("Partida cancelada.");
+                        finPartida.countDown(); // Caso de error fatal
+                    }
+
+                    if (!enJuego) {
+                        iniciarColocacion.countDown();
                     }
                     break;
                 default:

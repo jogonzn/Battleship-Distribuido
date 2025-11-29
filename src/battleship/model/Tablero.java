@@ -4,9 +4,6 @@ import battleship.util.Colores;
 import java.util.ArrayList;
 
 /**
- * Representa el tablero de juego de Battleship.
- * Es una matriz de 10x10 donde se colocan los barcos y se registran los disparos.
- * 
  * @author Jorge González Navas
  */
 public class Tablero {

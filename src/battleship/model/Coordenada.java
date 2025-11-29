@@ -1,9 +1,6 @@
 package battleship.model;
 
 /**
- * Representa una coordenada en el tablero de Battleship.
- * Utiliza un sistema de coordenadas de fila y columna (0-9).
- * 
  * @author Jorge González Navas
  */
 public class Coordenada {
